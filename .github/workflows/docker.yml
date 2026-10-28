@@ -1,56 +1,54 @@
-﻿name: Docker Build, Scan and Publish
+﻿
+name: Docker Build, Scan and Publish
 
 on:
-push:
-branches:
-- main
+  push:
+    branches:
+      - main
 
 permissions:
-contents: read
-packages: write
+  contents: read
+  packages: write
 
 jobs:
-docker:
-name: Build, Scan and Publish
-runs-on: ubuntu-latest
+  docker:
+    name: Build, Scan and Publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
-```
-steps:
-  - name: Checkout repository
-    uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-  - name: Log in to GitHub Container Registry
-    uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1
-    with:
-      registry: ghcr.io
-      username: ${{ github.actor }}
-      password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build Docker image
+        run: docker build -t lab2-churn-api:${GITHUB_SHA} .
 
-  - name: Build Docker image
-    run: docker build -t lab2-churn-api:${GITHUB_SHA} .
+      - name: Scan Docker image with Trivy
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
+        with:
+          image-ref: lab2-churn-api:${{ github.sha }}
+          format: table
+          exit-code: '1'
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+          severity: 'CRITICAL'
 
-  - name: Scan Docker image with Trivy
-    uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
-    with:
-      image-ref: lab2-churn-api:${{ github.sha }}
-      format: table
-      exit-code: '1'
-      ignore-unfixed: true
-      vuln-type: 'os,library'
-      severity: 'CRITICAL'
+      - name: Set image name
+        id: image
+        shell: bash
+        run: |
+          echo "name=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
 
-  - name: Set image name
-    id: image
-    shell: bash
-    run: |
-      echo "name=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+      - name: Tag Docker image
+        run: docker tag lab2-churn-api:${GITHUB_SHA} ${{ steps.image.outputs.name }}:${GITHUB_SHA}
 
-  - name: Tag Docker image
-    run: docker tag lab2-churn-api:${GITHUB_SHA} ${{ steps.image.outputs.name }}:${GITHUB_SHA}
+      - name: Push Docker image
+        run: docker push ${{ steps.image.outputs.name }}:${GITHUB_SHA}
 
-  - name: Push Docker image
-    run: docker push ${{ steps.image.outputs.name }}:${GITHUB_SHA}
-
-  - name: Inspect published image digest
-    run: docker buildx imagetools inspect ${{ steps.image.outputs.name }}:${GITHUB_SHA}
-```
+      - name: Inspect published image digest
+        run: docker buildx imagetools inspect ${{ steps.image.outputs.name }}:${GITHUB_SHA}
